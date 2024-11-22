@@ -3,76 +3,65 @@ import os
 import argparse
 from procaddressspace import Process
 from pathlib import PosixPath
-from util import get_address_space_layout, load_library_get_relative_addr
+from util import get_address_space_layout, load_library_get_relative_addr, UserRegsStruct
 import myptrace
 import struct
-import dissect.cstruct
-
+import sys
+from mytypes import MyType
 parser = argparse.ArgumentParser(
     description="Another binary injector, for tracing syscalls/library calls")
 
 
-class UserRegsStruct(ctypes.Structure):
-    """Define the register structure."""
-    _fields_ = [
-        ("r15", ctypes.c_ulonglong),
-        ("r14", ctypes.c_ulonglong),
-        ("r13", ctypes.c_ulonglong),
-        ("r12", ctypes.c_ulonglong),
-        ("rbp", ctypes.c_ulonglong),
-        ("rbx", ctypes.c_ulonglong),
-        ("r11", ctypes.c_ulonglong),
-        ("r10", ctypes.c_ulonglong),
-        ("r9", ctypes.c_ulonglong),
-        ("r8", ctypes.c_ulonglong),
-        ("rax", ctypes.c_ulonglong),
-        ("rcx", ctypes.c_ulonglong),
-        ("rdx", ctypes.c_ulonglong),
-        ("rsi", ctypes.c_ulonglong),
-        ("rdi", ctypes.c_ulonglong),
-        ("orig_rax", ctypes.c_ulonglong),
-        ("rip", ctypes.c_ulonglong),
-        ("cs", ctypes.c_ulonglong),
-        ("eflags", ctypes.c_ulonglong),
-        ("rsp", ctypes.c_ulonglong),
-        ("ss", ctypes.c_ulonglong),
-        ("fs_base", ctypes.c_ulonglong),
-        ("gs_base", ctypes.c_ulonglong),
-        ("ds", ctypes.c_ulonglong),
-        ("es", ctypes.c_ulonglong),
-        ("fs", ctypes.c_ulonglong),
-        ("gs", ctypes.c_ulonglong),
-    ]
+def is_pointer_type(ctype):
+    return ctypes._Pointer in ctype.__mro__
 
 
-def hook(pid, original_data, addr):
+def hook(pid, original_data, addr, dumps=None, process: Process = None):
     """Handle the breakpoint when it is hit."""
     print("Breakpoint hit!")
 
     regs = UserRegsStruct()
     myptrace.ptrace(myptrace.PTRACE_GETREGS, pid, None, ctypes.byref(regs))
 
-    print("Register values:")
-    print(f"RIP: {regs.rip:#x}")
-    print(f"RSP: {regs.rsp:#x}")
-    print(f"RAX: {regs.rax:#x}")
-    print(f"RBX: {regs.rbx:#x}")
-    print(f"RCX: {regs.rcx:#x}")
-    print(f"RDX: {regs.rdx:#x}")
-    print(f"RSI: {regs.rsi:#x}")
-    print(f"RDI: {regs.rdi:#x}")
-    print(f"EFLAGS: {regs.eflags:#x}")
+    if not dumps:
+        return
+    print(dumps)
+    print("here")
+    for index, el in enumerate(dumps):
+        print(f"here {index}")
+        if not el:
+            continue
 
-    res = myptrace.peek_data(pid, regs.rdi)
-    res = struct.pack('>Q', res)[::-1]
-    print(res)
+        if is_pointer_type(el.mytype):
+            size = ctypes.sizeof(el.mytype._type_)
+            print(size)
+
+            if not process:
+                break
+
+            mem_buffer = process.read_memory(0, regs.get_argument(index), size)
+            print(mem_buffer)
+
+        else:
+            print(el.mytype)
+            size = ctypes.sizeof(el.mytype)
+            print(size)
+
+            if not process:
+                break
+
+            r = regs.get_argument(index)
+
+            print(r)
+
+    print("here done")
 
 
-def debug(pid, original_data,  addr):
+def debug(pid, original_data, addr, dumps, process):
     while True:
         try:
             os.waitpid(pid, 0)
-            hook(pid, original_data, addr)
+            hook(pid, original_data, addr, dumps, process)
             myptrace.restore_breakpoint(
                 pid, addr,  original_data)
 
@@ -81,8 +70,9 @@ def debug(pid, original_data,  addr):
             original_data = myptrace.set_breakpoint(pid, addr)
             myptrace.cont(pid)
 
-        except:
+        except Exception as e:
             myptrace.detach(pid)
+            raise (e)
             break
 
 
@@ -97,7 +87,7 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
-        '--function_param_types',
+        '--function_defs',
         type=str,
         help="definition of function(s) parameters to trace e.g `const char *:pathname, int:flags, mode_t:mode`"
     )
@@ -116,8 +106,20 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    if not args.pid:
+        function_defs = args.function_defs.split(",")
+
+        types = [MyType(param) if param !=
+                 '_' else None for param in function_defs]
+
+        print(types)
+        for t in types:
+            print(ctypes.sizeof(t.mytype))
+
+        sys.exit(0)
+
     address_space = get_address_space_layout(args.pid)
-    process = Process(address_space)
+    process = Process(address_space, args.pid)
 
     function = args.function
 
@@ -137,11 +139,16 @@ if __name__ == '__main__':
 
         func_addr = (base_address + func_rel_addr)
         print(f"func: {function}, addr: {hex(func_addr)}")
+        function_defs = args.function_defs.split(",")
 
+        types = [MyType(param) if param !=
+                 '_' else None for param in function_defs]
+
+        print(types)
         myptrace.attach(args.pid)
         original_data = myptrace.set_breakpoint(args.pid, func_addr)
         myptrace.cont(args.pid)
 
-        debug(args.pid, original_data, func_addr)
+        debug(args.pid, original_data, func_addr, types, process)
 
     # print(repr(address_space))

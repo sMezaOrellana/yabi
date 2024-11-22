@@ -70,10 +70,11 @@ class ProcAddressSpace():
 
 
 class Process():
-    def __init__(self, proc_address_space: ProcAddressSpace):
+    def __init__(self, proc_address_space: ProcAddressSpace, pid: int = None):
         self.proc_address_space = proc_address_space
         self.shared_objects = {
             entry.pathname for entry in proc_address_space.proc_address_space_entries if isinstance(entry.pathname, PosixPath) and ".so" in entry.pathname.name}
+        self.pid = pid
 
     def get_address_file(self, file: PosixPath) -> (PosixPath, int):
         file = [f for f in self.shared_objects if file.name == f.name]
@@ -96,6 +97,7 @@ class Process():
         return (file, min)
 
     def read_memory(self, pid, address: int, size: int) -> bytes:
+        pid = self.pid if not pid else pid
         mem_file = f"/proc/{pid}/mem"
         buffer = None
 
