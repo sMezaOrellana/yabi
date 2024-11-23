@@ -5,11 +5,14 @@ from procaddressspace import Process
 from pathlib import PosixPath
 from util import get_address_space_layout, load_library_get_relative_addr, UserRegsStruct
 import myptrace
-import struct
 import sys
+import signal
 from mytypes import MyType
 parser = argparse.ArgumentParser(
     description="Another binary injector, for tracing syscalls/library calls")
+
+
+breakpoints = set()
 
 
 def is_pointer_type(ctype):
@@ -18,43 +21,27 @@ def is_pointer_type(ctype):
 
 def hook(pid, original_data, addr, dumps=None, process: Process = None):
     """Handle the breakpoint when it is hit."""
-    print("Breakpoint hit!")
 
     regs = UserRegsStruct()
     myptrace.ptrace(myptrace.PTRACE_GETREGS, pid, None, ctypes.byref(regs))
 
     if not dumps:
         return
-    print(dumps)
-    print("here")
+
     for index, el in enumerate(dumps):
-        print(f"here {index}")
         if not el:
             continue
 
+        size = ctypes.sizeof(el.mytype._type_) if is_pointer_type(
+            el.mytype) else ctypes.sizeof(el.mytype)
+
         if is_pointer_type(el.mytype):
-            size = ctypes.sizeof(el.mytype._type_)
-            print(size)
-
-            if not process:
-                break
-
-            mem_buffer = process.read_memory(0, regs.get_argument(index), size)
-            print(mem_buffer)
-
+            # TODO: implement pointer following?
+            result = process.read_memory(0, regs.get_argument(index), size)
         else:
-            print(el.mytype)
-            size = ctypes.sizeof(el.mytype)
-            print(size)
+            result = regs.get_argument(index)
 
-            if not process:
-                break
-
-            r = regs.get_argument(index)
-
-            print(r)
-
-    print("here done")
+        print(result)
 
 
 def debug(pid, original_data, addr, dumps, process):
@@ -64,16 +51,23 @@ def debug(pid, original_data, addr, dumps, process):
             hook(pid, original_data, addr, dumps, process)
             myptrace.restore_breakpoint(
                 pid, addr,  original_data)
-
+            breakpoints.remove(addr)
             myptrace.single_step(pid)
             os.waitpid(pid, 0)
-            original_data = myptrace.set_breakpoint(pid, addr)
+            myptrace.set_breakpoint(pid, addr)
+            breakpoints.add(addr)
             myptrace.cont(pid)
 
-        except Exception as e:
+        except KeyboardInterrupt:
+            os.kill(pid, signal.SIGTRAP)
+            os.waitpid(pid, 0)
+
+            if addr in breakpoints:
+                print(f"Removing breakpoint: {addr}")
+                myptrace.restore_breakpoint(pid, addr, original_data)
+
             myptrace.detach(pid)
-            raise (e)
-            break
+            sys.exit(0)
 
 
 if __name__ == '__main__':
@@ -89,7 +83,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--function_defs',
         type=str,
-        help="definition of function(s) parameters to trace e.g `const char *:pathname, int:flags, mode_t:mode`"
+        help="definition of function(s) parameters to trace e.g `const char *, int, mode_t`"
     )
 
     parser.add_argument(
@@ -105,18 +99,6 @@ if __name__ == '__main__':
     )
 
     args = parser.parse_args()
-
-    if not args.pid:
-        function_defs = args.function_defs.split(",")
-
-        types = [MyType(param) if param !=
-                 '_' else None for param in function_defs]
-
-        print(types)
-        for t in types:
-            print(ctypes.sizeof(t.mytype))
-
-        sys.exit(0)
 
     address_space = get_address_space_layout(args.pid)
     process = Process(address_space, args.pid)
@@ -147,8 +129,8 @@ if __name__ == '__main__':
         print(types)
         myptrace.attach(args.pid)
         original_data = myptrace.set_breakpoint(args.pid, func_addr)
+        breakpoints.add(func_addr)
+        print(breakpoints)
         myptrace.cont(args.pid)
 
         debug(args.pid, original_data, func_addr, types, process)
-
-    # print(repr(address_space))
