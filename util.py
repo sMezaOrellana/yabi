@@ -42,6 +42,11 @@ class UserRegsStruct(ctypes.Structure):
         _mapping = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
         return getattr(self, _mapping[number])
 
+    def print_regs(self):
+        """Print the register values."""
+        for field, value in self._fields_:
+            print(f"{field}: {hex(getattr(self, field))}")
+
 
 def get_address_space_layout(
         pid: Union[int, Literal["self"]]) -> Optional[ProcAddressSpace]:
@@ -75,3 +80,7 @@ def load_library_get_relative_addr(process: Process,
     _, self_base_address = process.get_address_file(lib_path)
 
     return func_address - self_base_address
+
+
+def format_hex(b):
+    return " ".join(f"{byte:02x}" for byte in b)

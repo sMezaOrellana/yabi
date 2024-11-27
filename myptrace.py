@@ -1,9 +1,6 @@
 import ctypes
 import os
 import sys
-from typing import Callable
-import signal
-import struct
 
 # Constants for ptrace
 PTRACE_ATTACH = 16
@@ -15,6 +12,9 @@ PTRACE_SINGLESTEP = 9
 PTRACE_GETSIGINFO = 0x4202  # This will retrieve signal info
 PTRACE_SYSCALL = 24  # To resume process and stop on syscalls
 PTRACE_GETREGS = 12
+PTRACE_SETREGS = 13
+PTRACE_PEEKUSER = 3
+PTRACE_POKEUSER = 6
 
 # Define the ctypes function prototype for ptrace
 libc = ctypes.CDLL("libc.so.6")
@@ -26,6 +26,25 @@ libc.ptrace.restype = ctypes.c_long
 def ptrace(request, pid, addr, data):
     """Wrapper for the ptrace system call."""
     return libc.ptrace(request, pid, addr, data)
+
+
+RIP_OFFSET = 16
+
+
+def get_program_counter(pid):
+    """Get the program counter (RIP for x86_64) of the target process."""
+    # PTRACE_PEEKUSER lets you read user-space registers.
+    rip = ptrace(PTRACE_PEEKUSER, pid, RIP_OFFSET, 0)
+    if rip == -1:
+        raise OSError("ptrace PEEKUSER failed")
+    return rip
+
+
+def set_program_counter(pid, new_pc):
+    """Set the program counter (RIP for x86_64) of the target process."""
+    # PTRACE_POKEUSER lets you write user-space registers.
+    if ptrace(PTRACE_POKEUSER, pid, RIP_OFFSET, new_pc) == -1:
+        raise OSError("ptrace POKEUSER failed")
 
 
 def attach(pid):
@@ -96,7 +115,7 @@ def cont(pid):
 def set_breakpoint(pid, addr):
     """Set a breakpoint at the given address."""
     # Read the original byte at the breakpoint address
-    print(f"setting breakpoint at address: {hex(addr)}")
+    # print(f"setting breakpoint at address: {hex(addr)}")
     original_data = peek_data(pid, addr)
 
     # Insert the breakpoint instruction (0xCC = INT 3)
