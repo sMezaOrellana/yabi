@@ -9,6 +9,7 @@ import sys
 import signal
 from mytypes import MyType
 import mywait
+from dissect.cstruct import cstruct
 
 parser = argparse.ArgumentParser(
     description="Yet Another Binary Injector, for tracing syscalls/library calls")
@@ -40,11 +41,21 @@ def hook(pid, addr, dumps=None, process: Process = None):
         size = ctypes.sizeof(el.mytype._type_) if is_pointer_type(
             el.mytype) else ctypes.sizeof(el.mytype)
 
+        if el.structure:
+            size = len(el.structure)
+
         if is_pointer_type(el.mytype):
             # TODO: implement pointer following?
-            result = process.read_memory(0, regs.get_argument(index), 250)
+            # TODO: this needs to be converted to a type
+            result = process.read_memory(0, regs.get_argument(index), size)
+
+            if el.structure:
+                result = el.structure(result)
+            else:
+                result = el.mytype._type_.from_buffer_copy(result)
         else:
             result = regs.get_argument(index)
+            result = el.mytype(result)
 
         print(result)
 
@@ -150,8 +161,8 @@ if __name__ == '__main__':
     if not args.function_defs:
         missing_args.add("--function_defs")
 
-    if args.function_defs_structs:
-        missing_args.add("--function_defs_structs")
+    # if not args.function_defs_structs:
+    #     missing_args.add("--function_defs_structs")
 
     if len(missing_args) != 0:
         err = "The following arguments are missing `{args}`".format(
@@ -163,6 +174,16 @@ if __name__ == '__main__':
     process = Process(address_space, args.pid)
 
     function = args.function
+
+    structs = None
+
+    if definitions := args.function_defs_structs:
+        contents = ''
+        with open(definitions, "r") as file:
+            contents = file.read()
+
+        structs = cstruct()
+        structs.load(contents)
 
     if function:
         temp = function.rsplit(":")
@@ -182,7 +203,7 @@ if __name__ == '__main__':
         print(f"func: {function}, addr: {hex(func_addr)}")
         function_defs = args.function_defs.split(",")
 
-        types = [MyType(param) if param !=
+        types = [MyType(param, structs) if param !=
                  '_' else None for param in function_defs]
 
         debug(args.pid, func_addr, types, process)

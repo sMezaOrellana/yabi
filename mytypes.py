@@ -22,12 +22,14 @@ def tokenize_declaration(declaration: str) -> list[str]:
 
 
 class MyType():
-    def __init__(self, c_type: str):
+    def __init__(self, c_type: str, c_structs=None):
         self.original_str = c_type
         # TODO: Add error checking and raise TokenizeException
         self.c_type = self.tokenize(c_type)
+        self.c_structs = c_structs
 
         self.mytype = None
+        self.structure = None
 
         # TODO: Add error checking and raise ParseException
         self.mytype = self.parse()
@@ -58,6 +60,9 @@ class MyType():
 
         if not struct_type:
             t = ATOMTYPE2CTYPES[base_type]
+        else:
+            self.structure = getattr(self.c_structs, self.c_type[head])
+            t = ctypes.POINTER(ctypes.c_uint8)
 
         head += 1
 
@@ -75,7 +80,7 @@ class MyType():
         return head == 0 and self.c_type[head] == 'const'
 
     def _struct(self, head: int) -> bool:
-        return head == 1 and self.c_type[head] == 'struct'
+        return self.c_type[head] == 'struct'
 
     def _pointer(self, head: int) -> bool:
         return self.c_type[head] == '*'
