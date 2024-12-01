@@ -108,7 +108,6 @@ class Process():
         return buffer
 
     def write_memory(self, pid, address: int, content: bytes):
-        print(hex(address))
         mem_file = f"/proc/{pid}/mem"
 
         with open(mem_file, "wb") as f:

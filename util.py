@@ -2,9 +2,21 @@ import ctypes
 from typing import Optional, Union, Literal
 from procaddressspace import ProcAddressSpace, Process
 from pathlib import PosixPath
+from dissect.cstruct import Structure
 
 
-class UserRegsStruct(ctypes.Structure):
+def cstruct_to_dict(structure: Structure) -> dict[str, any]:
+    res = {}
+    for k, v in getattr(structure, "_values").items():
+        if not isinstance(v, Structure):
+            res[k] = v
+        else:
+            res[k] = cstruct_to_dict(v)
+
+    return res
+
+
+class RegsStruct__x86_64(ctypes.Structure):
     """Define the register structure."""
     _fields_ = [
         ("r15", ctypes.c_ulonglong),

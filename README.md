@@ -2,9 +2,34 @@
 
 ## Overview
 
-This Python CLI implements a binary injection and tracing tool designed to hook and trace system calls or library function calls. 
-The utility leverages `ptrace` to debug and interact with a target process. 
-It sets breakpoints, reads registers, and inspects memory to trace and analyze function invocations. You can define the libary call you want to hook and pass the definition, in order to dump the structs in a human readable way.
+YAPD, or yet another programatic debugger allows us to specify:
+- process
+- shared object & function
+- function prototype
+- struct definitions (if needed)
+
+and it will dump the function parameters whenever the function is called by a process. The program can be called as follows:
+```bash
+python3 ./main.py --function libc.so.6:connect --function_defs_structs ./structs.h --function_defs "uint32, struct sockaddr_in, _" 
+--pid 687253
+```
+
+The output produced would look something like
+
+```json
+{
+  "libc.so.6:connect": {
+    "socket": 3,
+    "addr": {
+      "sa_family_t": 2,
+      "in_port": 8080,
+      "sin_addr": {
+      "s_addr": "127.0.0.1"
+      }
+    }
+  }
+}
+```
 
 ---
 
@@ -69,7 +94,8 @@ It sets breakpoints, reads registers, and inspects memory to trace and analyze f
 
 ## Example Usage
 
-### Attaching to a Process:
 ```bash
-python binary_injector.py --pid 1234 --function "libc:open" --function_param_types "const char *:pathname, int:flags"
+python3 ./main.py --function libc.so.6:connect --function_defs_structs ./structs.h --function_defs "uint32, struct sockaddr_in, _" 
+--pid 687253
 ```
+

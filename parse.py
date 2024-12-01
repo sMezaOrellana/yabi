@@ -1,4 +1,16 @@
-from dissect.cstruct import ctypes, cstruct, dumpstruct
+from dissect.cstruct import ctypes, cstruct, dumpstruct, Structure
+
+
+def cstruct_to_dict(structure: Structure) -> dict[str, any]:
+    res = {}
+    for k, v in getattr(structure, "_values").items():
+        if not isinstance(v, Structure):
+            res[k] = v
+        else:
+            res[k] = cstruct_to_dict(v)
+
+    return res
+
 
 if __name__ == '__main__':
     definitions = 'structs.h'
@@ -13,13 +25,11 @@ if __name__ == '__main__':
     in_addr = structs.sockaddr_in(data)
     ip = in_addr.sin_addr.s_addr
     import ipaddress
-    print(type(in_addr))
-    print(len(in_addr))
     print(in_addr)
     print(dumpstruct(structs.sockaddr_in, data))
-    print(type(structs))
-    print(dir(structs))
-    print(structs.sockaddr_in)
-
+    import json
     print(dir(structs.sockaddr_in))
-    # ctypes(structs.sockaddr_in)
+    print(dir(in_addr))
+    all_attributes = dir(in_addr)
+
+    print(cstruct_to_dict(in_addr))

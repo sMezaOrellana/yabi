@@ -3,7 +3,7 @@ import os
 import argparse
 from procaddressspace import Process
 from pathlib import PosixPath
-from util import format_hex, get_address_space_layout, load_library_get_relative_addr, UserRegsStruct
+from util import format_hex, get_address_space_layout, load_library_get_relative_addr, RegsStruct__x86_64, cstruct_to_dict
 import myptrace
 import sys
 import signal
@@ -25,15 +25,15 @@ def is_pointer_type(ctype):
 def hook(pid, addr, dumps=None, process: Process = None):
     """Handle the breakpoint when it is hit."""
 
-    regs = UserRegsStruct()
+    regs = RegsStruct__x86_64()
     myptrace.ptrace(myptrace.PTRACE_GETREGS, pid, None, ctypes.byref(regs))
 
-    print(f"Adr: {hex(addr)}")
-    print(f"RIP: {hex(regs.rip)}")
+    # print(f"Adr: {hex(addr)}")
+    # print(f"RIP: {hex(regs.rip)}")
 
     if not dumps:
         return
-
+    res = {}
     for index, el in enumerate(dumps):
         if not el:
             continue
@@ -50,14 +50,16 @@ def hook(pid, addr, dumps=None, process: Process = None):
             result = process.read_memory(0, regs.get_argument(index), size)
 
             if el.structure:
-                result = el.structure(result)
+                result = cstruct_to_dict(el.structure(result))
             else:
                 result = el.mytype._type_.from_buffer_copy(result)
         else:
             result = regs.get_argument(index)
             result = el.mytype(result)
 
-        print(result)
+        res[str(index)] = result
+
+    print(res)
 
 
 BREAKPOINT_INSTUCTION = b'\xCC'
@@ -78,7 +80,7 @@ def debug(pid, addr, dumps, process):
                 mywait.mywait(pid, signal.SIGTRAP)
 
             except ValueError:
-                regs = UserRegsStruct()
+                regs = RegsStruct__x86_64()
                 myptrace.ptrace(myptrace.PTRACE_GETREGS, pid,
                                 None, ctypes.byref(regs))
 
@@ -86,12 +88,15 @@ def debug(pid, addr, dumps, process):
                 print(format_hex(process.read_memory(pid, regs.rip, 20)))
                 break
 
+            except OSError:
+                break
+
             hook(pid, addr, dumps, process)
 
             process.write_memory(pid, addr, original_data)
             breakpoints.remove(addr)
 
-            regs = UserRegsStruct()
+            regs = RegsStruct__x86_64()
             myptrace.ptrace(myptrace.PTRACE_GETREGS, pid,
                             None, ctypes.byref(regs))
 
