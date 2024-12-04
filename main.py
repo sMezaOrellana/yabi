@@ -57,7 +57,7 @@ def hook(pid, addr, dumps=None, process: Process = None):
             result = regs.get_argument(index)
             result = el.mytype(result)
 
-        res[str(index)] = result
+        res[el.identifier] = result
 
     print(res)
 
@@ -65,19 +65,32 @@ def hook(pid, addr, dumps=None, process: Process = None):
 BREAKPOINT_INSTUCTION = b'\xCC'
 
 
-def debug(pid, addr, dumps, process):
-    myptrace.attach(pid)
+def debug(pid, addr, dumps, process, tasks=None):
+    if tasks:
+        for task in tasks:
+            myptrace.attach(task)
+    else:
+        myptrace.attach(pid)
 
     original_data = process.read_memory(pid, addr, 1)
     process.write_memory(pid, addr, BREAKPOINT_INSTUCTION)
     breakpoints.add(addr)
-    myptrace.cont(pid)
+
+    if tasks:
+        for task in tasks:
+            myptrace.cont(task)
+    else:
+        myptrace.cont(pid)
 
     while True:
         try:
 
             try:
-                mywait.mywait(pid, signal.SIGTRAP)
+                if tasks:
+                    for task in tasks:
+                        mywait.mywait(task, signal.SIGTRAP, wnohang=True)
+                else:
+                    mywait.mywait(pid, signal.SIGTRAP)
 
             except ValueError:
                 regs = RegsStruct__x86_64()
@@ -86,9 +99,6 @@ def debug(pid, addr, dumps, process):
 
                 print(hex(regs.rip))
                 print(format_hex(process.read_memory(pid, regs.rip, 20)))
-                break
-
-            except OSError:
                 break
 
             hook(pid, addr, dumps, process)
@@ -122,7 +132,12 @@ def debug(pid, addr, dumps, process):
                 print(f"Removing breakpoint: {addr}")
                 process.write_memory(pid, addr, original_data)
 
-            myptrace.detach(pid)
+            if tasks:
+                for task in tasks:
+                    myptrace.detach(task)
+            else:
+                myptrace.detach(pid)
+
             sys.exit(0)
 
 
@@ -190,6 +205,13 @@ if __name__ == '__main__':
         structs = cstruct()
         structs.load(contents)
 
+    task_path = f'/proc/{args.pid}/task/'
+
+    tasks = os.listdir(task_path)
+    print(tasks)
+
+    # os._exit(1)
+
     if function:
         temp = function.rsplit(":")
 
@@ -211,4 +233,5 @@ if __name__ == '__main__':
         types = [MyType(param, structs) if param !=
                  '_' else None for param in function_defs]
 
-        debug(args.pid, func_addr, types, process)
+        tasks = None
+        debug(args.pid, func_addr, types, process, tasks)

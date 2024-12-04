@@ -30,7 +30,7 @@ class MyType():
 
         self.mytype = None
         self.structure = None
-
+        self.identifier = None
         # TODO: Add error checking and raise ParseException
         self.mytype = self.parse()
 
@@ -66,7 +66,7 @@ class MyType():
 
         head += 1
 
-        while (head <= len(self.c_type) - 1):
+        while (head < len(self.c_type) - 1):
             if self._pointer(head):
                 t = ctypes.POINTER(t)
                 head += 1
@@ -74,6 +74,7 @@ class MyType():
                 raise ValueError(
                     f"While parsing string: '{self.original_str}'. At position: {head} expected token: '*' received: {self.c_type[head]}")
 
+        self.identifier = self.c_type[head]
         return t
 
     def _const(self, head: int) -> bool:
